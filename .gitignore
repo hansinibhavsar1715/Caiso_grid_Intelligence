@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+data/raw/
+data/grid_stress.db
+data/*.pkl
+pipeline.log
+ingest/*.ipynb
+ingest/__pycache__/
