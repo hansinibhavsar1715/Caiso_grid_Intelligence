@@ -2,7 +2,9 @@
 
 An end-to-end data pipeline that ingests real-time electricity demand and price data from two independent APIs, validates and stores it, engineers time-series features, forecasts next-hour price and grid stress using machine learning, and surfaces everything on a live Streamlit dashboard.
 
-**Live pipeline runs hourly, fully unattended, via Windows Task Scheduler.**
+**🔗 Live dashboard:https://caiso-grid-intelligence.streamlit.app/**
+
+**Local pipeline runs hourly, fully unattended, via Windows Task Scheduler. The deployed dashboard fetches live data directly from both APIs on each load.**
 
 ---
 
