@@ -8,3 +8,5 @@ data/*.pkl
 pipeline.log
 ingest/*.ipynb
 ingest/__pycache__/
+
+.streamlit/secrets.toml

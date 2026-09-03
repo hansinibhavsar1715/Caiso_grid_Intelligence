@@ -1,19 +1,14 @@
-import os
+
 import requests
 import pandas as pd
-from dotenv import load_dotenv
+from ingest.config import get_secret
+
 
 def fetch_eia_caiso(start: str, end: str) -> pd.DataFrame:
-    """
-    Pull hourly demand, day-ahead forecast, net generation,
-    and interchange for CAISO from the EIA API.
-    start/end format: 'YYYY-MM-DDTHH'
-    """
-    load_dotenv()
-    api_key = os.getenv("EIA_API_KEY")
+    api_key = get_secret("EIA_API_KEY")
 
     if not api_key:
-        raise ValueError("EIA_API_KEY not found - check your .env file")
+        raise ValueError("EIA_API_KEY not found - check your .env file or Streamlit secrets")
 
     url = "https://api.eia.gov/v2/electricity/rto/region-data/data/"
     params = {

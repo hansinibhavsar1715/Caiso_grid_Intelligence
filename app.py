@@ -1,27 +1,15 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 import joblib
 import plotly.graph_objects as go
-from sklearn.inspection import permutation_importance
+from datetime import datetime, timedelta, timezone
 
+from ingest.eia_fetch import fetch_eia_caiso
+from ingest.gridstatus_fetch import fetch_caiso_lmp
+from ingest.transform import build_fact_table
 from ingest.features import engineer_features
 
 st.set_page_config(page_title="Grid Stress Monitor", layout="wide")
-
-@st.cache_data(ttl=300)
-def load_data():
-    conn = sqlite3.connect("data/grid_stress.db")
-    df = pd.read_sql("SELECT * FROM fact_grid_hourly ORDER BY hour_utc", conn)
-    conn.close()
-    df["hour_utc"] = pd.to_datetime(df["hour_utc"])
-    return df
-
-@st.cache_resource
-def load_models():
-    price_model = joblib.load("data/price_model.pkl")
-    stress_model = joblib.load("data/stress_model.pkl")
-    return price_model, stress_model
 
 FEATURE_COLS = [
     "hour_of_day", "day_of_week", "is_weekend",
@@ -33,23 +21,49 @@ FEATURE_COLS = [
     "demand_mwh_roll_mean3", "demand_mwh_roll_mean24",
 ]
 
-df = load_data()
-featured = engineer_features(df)
-price_model, stress_model = load_models()
+
+@st.cache_data(ttl=900)  # refresh every 15 minutes - avoids hammering the APIs
+def load_live_data():
+    now = datetime.now(timezone.utc)
+    lookback = now - timedelta(days=3)  # need enough history for lag24/rolling24
+
+    df_eia = fetch_eia_caiso(
+        start=lookback.strftime("%Y-%m-%dT%H"),
+        end=now.strftime("%Y-%m-%dT%H"),
+    )
+    df_gs = fetch_caiso_lmp(
+        start=lookback.strftime("%Y-%m-%d"),
+        end=now.strftime("%Y-%m-%d"),
+    )
+
+    fact = build_fact_table(df_eia, df_gs)
+    fact["hour_utc"] = pd.to_datetime(fact["hour_utc"])
+    return fact
+
+
+@st.cache_resource
+def load_models():
+    price_model = joblib.load("data/price_model.pkl")
+    stress_model = joblib.load("data/stress_model.pkl")
+    return price_model, stress_model
+
 
 st.title("⚡ CAISO Grid Stress & Price Intelligence")
-st.caption(f"Live pipeline: EIA demand data + GridStatus.io real-time pricing | Last data point: {df['hour_utc'].max()}")
 
-# Most recent row WITH complete demand/price data (for display)
+with st.spinner("Fetching live grid data..."):
+    df = load_live_data()
+    featured = engineer_features(df)
+    price_model, stress_model = load_models()
+
+st.caption(f"Live pipeline: EIA demand data + GridStatus.io real-time pricing | "
+           f"Data refreshes every 15 min | Last data point: {df['hour_utc'].max()}")
+
 complete_rows = featured.dropna(subset=["demand_mwh", "avg_lmp"])
 latest_complete = complete_rows.iloc[[-1]] if len(complete_rows) > 0 else featured.iloc[[-1]]
-
-# True latest row (for prediction - features can handle some NaN)
 latest_for_prediction = featured.iloc[[-1]]
 latest_features = latest_for_prediction[FEATURE_COLS]
 
-st.caption(f"Showing latest complete hour: {latest_complete['hour_utc'].values[0]} "
-           f"(most recent pipeline data point: {latest_for_prediction['hour_utc'].values[0]}, may still be settling)")
+st.caption(f"Showing latest complete hour: {latest_complete['hour_utc'].values[0]}")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -78,7 +92,7 @@ except Exception:
 
 st.divider()
 
-recent = featured.tail(168)
+recent = featured.tail(72)
 
 tab1, tab2, tab3 = st.tabs(["Price & Demand", "Grid Stress Score", "Model Info"])
 
@@ -105,17 +119,4 @@ with tab3:
     st.subheader("Model Performance (held-out test set)")
     st.write("**Price Forecast Model**: 34.6% MAE improvement over naive baseline (651 training hours)")
     st.write("**Stress Score Model**: 65.7% MAE improvement over naive baseline (613 training hours)")
-    st.caption("Both models are HistGradientBoostingRegressor, trained on lag/rolling/calendar features from EIA + GridStatus.io data.")
-
-    st.subheader("Top Price Model Features")
-    with st.spinner("Computing feature importance..."):
-        clean = featured.dropna(subset=FEATURE_COLS + ["target_price_next_hour"])
-        X_sample = clean[FEATURE_COLS].tail(200)
-        y_sample = clean["target_price_next_hour"].tail(200)
-
-        result = permutation_importance(
-            price_model, X_sample, y_sample, n_repeats=5, random_state=42
-        )
-        importances = pd.Series(result.importances_mean, index=FEATURE_COLS).sort_values(ascending=False)
-
-    st.bar_chart(importances.head(8))
+    st.caption("Models trained offline on historical data; this dashboard fetches live data for inference only.")

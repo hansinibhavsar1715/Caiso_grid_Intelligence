@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+requests
+gridstatusio
+python-dotenv
+scikit-learn
+plotly
+joblib
