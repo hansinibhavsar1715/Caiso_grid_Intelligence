@@ -4,6 +4,6 @@ numpy
 requests
 gridstatusio
 python-dotenv
-scikit-learn==1.6.1
+scikit-learn
 plotly
 joblib
